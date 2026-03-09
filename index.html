@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Image to Text (OCR)</title>
 
-  <!-- Tesseract.js (browser OCR) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- Tesseract.js (v5) -->
+  https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.jsscript>
 
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
@@ -65,6 +65,32 @@
       }
     });
 
+    async function runOcr(file) {
+      // v5 pattern: set language in createWorker.
+      // Explicit paths to avoid Android Chrome stalling when auto-resolving asset URLs.
+      const worker = await Tesseract.createWorker('eng', 1, {
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@v5.0.0/dist/worker.min.js',
+        langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.0.0',
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const pct = m.progress != null ? Math.round(m.progress * 100) : null;
+            setStatus(pct != null ? `Recognising text... ${pct}%` : 'Recognising text...');
+          } else if (m.status) {
+            setStatus(`${m.status}...`);
+          }
+        }
+      });
+
+      try {
+        setStatus('Recognising text...');
+        const result = await worker.recognize(file);
+        return (result && result.data && result.data.text) ? result.data.text : '';
+      } finally {
+        await worker.terminate();
+      }
+    }
+
     imageInput.addEventListener('change', async () => {
       const file = imageInput.files && imageInput.files[0];
       if (!file) return;
@@ -75,28 +101,10 @@
       setStatus('Loading OCR engine...');
 
       try {
-        const worker = await Tesseract.createWorker({
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              const pct = m.progress != null ? Math.round(m.progress * 100) : null;
-              setStatus(pct != null ? `Recognising text... ${pct}%` : 'Recognising text...');
-            } else if (m.status) {
-              setStatus(`${m.status}...`);
-            }
-          }
-        });
-
-        await worker.loadLanguage('eng');
-        await worker.initialize('eng');
-
-        setStatus('Recognising text...');
-        const result = await worker.recognize(file);
-        output.value = (result && result.data && result.data.text) ? result.data.text : '';
-
-        await worker.terminate();
-
-        setStatus(output.value ? 'Done.' : 'Done (no text detected).');
-        copyBtn.disabled = !output.value;
+        const text = await runOcr(file);
+        output.value = text;
+        setStatus(text ? 'Done.' : 'Done (no text detected).');
+        copyBtn.disabled = !text;
       } catch (err) {
         console.error(err);
         setStatus('Error running OCR. Check console for details.');
@@ -108,3 +116,4 @@
 
 </body>
 </html>
+ 
