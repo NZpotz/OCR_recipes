@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image to Text (OCR)</title>
+
+  <!-- Tesseract.js (browser OCR) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h3 { margin: 0 0 12px 0; }
+    #controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    #status { margin-top: 10px; font-size: 0.9em; color: #333; }
+    textarea { width: 100%; height: 240px; margin-top: 10px; font-family: Consolas, monospace; }
+    button { padding: 6px 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <h3>Image to Text</h3>
+
+  <div id="controls">
+    <input type="file" id="imageInput" accept="image/*">
+    <button id="copyBtn" type="button" disabled>Copy</button>
+    <button id="clearBtn" type="button">Clear</button>
+  </div>
+
+  <div id="status">Select an image to start.</div>
+  <textarea id="output" placeholder="Extracted text appears here" spellcheck="false"></textarea>
+
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const output = document.getElementById('output');
+    const statusEl = document.getElementById('status');
+    const copyBtn = document.getElementById('copyBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let busy = false;
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function setBusy(isBusy) {
+      busy = isBusy;
+      imageInput.disabled = isBusy;
+      copyBtn.disabled = isBusy || !output.value;
+    }
+
+    clearBtn.addEventListener('click', () => {
+      output.value = '';
+      imageInput.value = '';
+      setStatus('Select an image to start.');
+      copyBtn.disabled = true;
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(output.value);
+        setStatus('Copied to clipboard.');
+      } catch (e) {
+        setStatus('Copy failed (browser permissions).');
+      }
+    });
+
+    imageInput.addEventListener('change', async () => {
+      const file = imageInput.files && imageInput.files[0];
+      if (!file) return;
+      if (busy) return;
+
+      output.value = '';
+      setBusy(true);
+      setStatus('Loading OCR engine...');
+
+      try {
+        const worker = await Tesseract.createWorker({
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const pct = m.progress != null ? Math.round(m.progress * 100) : null;
+              setStatus(pct != null ? `Recognising text... ${pct}%` : 'Recognising text...');
+            } else if (m.status) {
+              setStatus(`${m.status}...`);
+            }
+          }
+        });
+
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+
+        setStatus('Recognising text...');
+        const result = await worker.recognize(file);
+        output.value = (result && result.data && result.data.text) ? result.data.text : '';
+
+        await worker.terminate();
+
+        setStatus(output.value ? 'Done.' : 'Done (no text detected).');
+        copyBtn.disabled = !output.value;
+      } catch (err) {
+        console.error(err);
+        setStatus('Error running OCR. Check console for details.');
+      } finally {
+        setBusy(false);
+      }
+    });
+  </script>
+
+</body>
+</html>
